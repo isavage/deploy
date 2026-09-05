@@ -83,6 +83,16 @@ on:
         required: false
         type: string
         default: ''
+      env_content:
+        description: 'Optional .env file content'
+        required: false
+        type: string
+        default: ''
+      env_file_name:
+        description: 'Name of the env file to write on VPS (default: .env)'
+        required: false
+        type: string
+        default: '.env'
     secrets:
       VPS_HOST:
         description: 'VPS Host IP or hostname'
@@ -95,6 +105,9 @@ on:
         required: true
       DOPPLER_TOKEN:
         description: 'Optional Doppler service token'
+        required: false
+      ENV_FILE:
+        description: 'Optional .env file content from secrets (auto-inherited)'
         required: false
 
 jobs:
@@ -120,6 +133,8 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         env:
           DOPPLER_TOKEN: ${{ secrets.DOPPLER_TOKEN || '' }}
+          ENV_CONTENT: ${{ inputs.env_content || secrets.ENV_FILE || '' }}
+          ENV_FILE_NAME: ${{ inputs.env_file_name || '.env' }}
           REPO_NAME: ${{ github.event.repository.name || 'deploy' }}
           INPUT_TARGET_DIR: ${{ inputs.target_dir }}
           COMPOSE_FILE: ${{ inputs.compose_file }}
@@ -139,7 +154,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ inputs.port || '22' }}
-          envs: DOPPLER_TOKEN,REPO_NAME,INPUT_TARGET_DIR,COMPOSE_FILE,INPUT_EXCLUDE,DOWN,PULL,BUILD,NO_CACHE,FORCE_RECREATE,CLEANUP,CLEANUP_IMAGE,PRE_DEPLOY_COMMAND,POST_DEPLOY_COMMAND,SERVICE_NAME
+          envs: DOPPLER_TOKEN,ENV_CONTENT,ENV_FILE_NAME,REPO_NAME,INPUT_TARGET_DIR,COMPOSE_FILE,INPUT_EXCLUDE,DOWN,PULL,BUILD,NO_CACHE,FORCE_RECREATE,CLEANUP,CLEANUP_IMAGE,PRE_DEPLOY_COMMAND,POST_DEPLOY_COMMAND,SERVICE_NAME
           script: |
             set -euo pipefail
 
@@ -169,8 +184,9 @@ jobs:
             mkdir -p "$TARGET_DIR" 2>/dev/null || sudo mkdir -p "$TARGET_DIR"
 
             # 3. Sync files from staging to target directory
+            # Always protect existing .env files on the VPS from rsync --delete
             if [ -d "$TEMP_DIR" ]; then
-              RSYNC_EXCLUDE_FLAGS=""
+              RSYNC_EXCLUDE_FLAGS="--exclude=.env --exclude=.env.*"
               if [ -n "${INPUT_EXCLUDE:-}" ]; then
                 IFS=', ' read -r -a EXCLUDE_ITEMS <<< "$INPUT_EXCLUDE"
                 for item in "${EXCLUDE_ITEMS[@]}"; do
@@ -189,6 +205,19 @@ jobs:
             fi
 
             cd "$TARGET_DIR"
+
+            # 4. Environment Variables (.env handling)
+            TARGET_ENV_FILE="${ENV_FILE_NAME:-.env}"
+            if [ -n "${ENV_CONTENT:-}" ]; then
+              echo "[deploy] Writing environment variables to $TARGET_ENV_FILE from secret..."
+              (printf "%s\n" "$ENV_CONTENT" > "$TARGET_DIR/$TARGET_ENV_FILE" 2>/dev/null) || \
+              (printf "%s\n" "$ENV_CONTENT" | sudo tee "$TARGET_DIR/$TARGET_ENV_FILE" > /dev/null)
+              (chmod 600 "$TARGET_DIR/$TARGET_ENV_FILE" 2>/dev/null) || (sudo chmod 600 "$TARGET_DIR/$TARGET_ENV_FILE")
+            elif [ -f "$TARGET_DIR/$TARGET_ENV_FILE" ]; then
+              echo "[deploy] Preserving existing VPS $TARGET_ENV_FILE."
+            else
+              echo "[deploy] No Doppler token, no env secret, and no existing $TARGET_ENV_FILE on VPS."
+            fi
 
             # 4. Resolve Compose File
             RESOLVED_COMPOSE="$COMPOSE_FILE"
