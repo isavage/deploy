@@ -22,7 +22,7 @@ jobs:
       #   run: npm test
 
       - name: Deploy to VPS
-        uses: isavage/deploy@main
+        uses: isavage/deploy@v2
         with:
           host: ${{ secrets.VPS_HOST }}
           user: ${{ secrets.VPS_USER }}

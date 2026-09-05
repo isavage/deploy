@@ -11,6 +11,6 @@ on:
 
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@main
+    uses: isavage/deploy/.github/workflows/deploy.yml@v2
     secrets: inherit
 

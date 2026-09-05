@@ -17,7 +17,7 @@ on:
 
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@main
+    uses: isavage/deploy/.github/workflows/deploy.yml@v2
     secrets: inherit
 ```
 
@@ -96,7 +96,7 @@ on:
 
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@main
+    uses: isavage/deploy/.github/workflows/deploy.yml@v2
     secrets: inherit
     with:
       no_cache: ${{ inputs.no_cache || false }}
@@ -107,7 +107,7 @@ jobs:
 ```yaml
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@main
+    uses: isavage/deploy/.github/workflows/deploy.yml@v2
     secrets: inherit
     with:
       no_cache: true
@@ -154,7 +154,7 @@ All inputs are optional and have sensible defaults matching standard VPS setups:
 ```yaml
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@main
+    uses: isavage/deploy/.github/workflows/deploy.yml@v2
     secrets: inherit
     with:
       target_dir: "/docker/hermes"
@@ -182,7 +182,7 @@ jobs:
         run: npm test
 
       - name: Deploy to VPS
-        uses: isavage/deploy@main
+        uses: isavage/deploy@v2
         with:
           host: ${{ secrets.VPS_HOST }}
           user: ${{ secrets.VPS_USER }}
