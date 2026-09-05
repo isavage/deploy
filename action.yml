@@ -1,6 +1,9 @@
-name: 'VPS Docker Deploy'
+name: 'Zero-Config VPS Docker Deploy'
 description: 'Deploy project to VPS via SSH & Docker Compose with optional Doppler integration'
 author: 'isavage'
+branding:
+  icon: 'server'
+  color: 'blue'
 
 inputs:
   host:

@@ -1,4 +1,4 @@
-# Universal VPS Docker Deployment GitHub Action & Reusable Workflow
+# Zero-Config VPS Docker Deploy
 
 Zero-boilerplate automated continuous deployment to your VPS using Docker Compose, with built-in Doppler integration, container health verification, and image rebuild / cache-invalidation controls.
 
@@ -35,22 +35,37 @@ Set these secrets in your repository (**Settings > Secrets and variables > Actio
 | `VPS_USER` | **Org or Repo** | SSH username on your VPS (e.g. `root` or a sudo-enabled user) | **Yes** |
 | `VPS_SSH_KEY` | **Org or Repo** | Private SSH key (matching `~/.ssh/authorized_keys` on VPS) | **Yes** |
 | `DOPPLER_TOKEN` | **Repo Only** | Project-specific Service Token from Doppler (`dp.st...`) | **Optional** |
+| `ENV_FILE` | **Repo Only** | Complete `.env` content from GitHub secrets | **Optional** |
 
 > [!TIP]
 > - **Shared VPS Secrets (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`)**: Add these once at your **GitHub Organization / Account** level so all repositories inherit them automatically.
-> - **`DOPPLER_TOKEN`**: Must be added at each **individual Repository level** (or Environment level), because Doppler Service Tokens are scoped to a specific project and config.
+> - **`DOPPLER_TOKEN` / `ENV_FILE`**: Add at each **individual Repository level** (or Environment level) so secrets remain isolated per project.
 
 ---
 
-## 🌟 How Doppler Integration Works
+## 🌟 Environment Variables & Secrets Handling
 
+The action gives you 3 convenient ways to manage environment variables:
+
+### Mode 1: Doppler (Recommended if using Doppler)
 If `DOPPLER_TOKEN` is passed:
-1. The action checks if Doppler CLI is installed on your VPS. If not, it automatically installs it.
-2. It sets up authentication and runs all Docker Compose commands and pre/post deployment scripts wrapped inside `doppler run --`:
-   ```bash
-   doppler run -- docker compose up -d --remove-orphans
-   ```
-3. If `DOPPLER_TOKEN` is omitted or empty, it runs plain `docker compose` commands directly.
+- Doppler CLI is installed on the VPS (if missing).
+- Secrets are injected in memory directly to Docker Compose:
+  ```bash
+  doppler run -- docker compose up -d
+  ```
+- No `.env` file needs to be written to disk.
+
+### Mode 2: Secrets from GitHub (`ENV_FILE` / `env_content`)
+If not using Doppler, you can store your `.env` contents in GitHub Secrets as `ENV_FILE`:
+- With `secrets: inherit`, any secret named `ENV_FILE` in your repo is automatically passed.
+- The action safely writes it to `.env` on your VPS and sets file permissions to `600` before starting containers.
+- You can also specify a custom filename via `with: env_file_name: ".env.production"`.
+
+### Mode 3: Persistent VPS `.env` File (Auto-Protected)
+If you prefer creating and managing your `.env` directly on your VPS:
+- **`rsync --delete` will NEVER delete your VPS `.env` files**: The deploy action automatically excludes `.env` and `.env.*` from deletion.
+- Docker Compose will read your existing server `.env` on startup.
 
 ---
 
@@ -128,6 +143,8 @@ All inputs are optional and have sensible defaults matching standard VPS setups:
 | `pre_deploy_command` | string | `""` | Shell command to execute before `compose up` |
 | `post_deploy_command`| string | `""` | Shell command to execute after `compose up` |
 | `environment` | string | `""` | GitHub Environment to bind for secret protection |
+| `env_content` | string | `""` | Optional .env contents passed from secrets |
+| `env_file_name` | string | `.env` | File name for written environment variables |
 
 ---
 
