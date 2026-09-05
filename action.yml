@@ -1,6 +1,6 @@
 name: 'VPS Docker Deploy'
 description: 'Deploy project to VPS via SSH & Docker Compose with optional Doppler integration'
-author: 'varunsharma'
+author: 'isavage'
 
 inputs:
   host:

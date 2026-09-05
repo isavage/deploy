@@ -11,7 +11,6 @@ on:
 
 jobs:
   deploy:
-    # Replace <USERNAME_OR_ORG> with your GitHub username or organization name where the deploy repo lives
-    uses: <USERNAME_OR_ORG>/deploy/.github/workflows/deploy.yml@main
+    uses: isavage/deploy/.github/workflows/deploy.yml@main
     secrets: inherit
 
