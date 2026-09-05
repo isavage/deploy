@@ -1,0 +1,35 @@
+# ==============================================================================
+# Deploy Step Workflow (Composite Action)
+# Use this when you have an existing multi-step CI pipeline (e.g. running tests,
+# linting, or building assets first) and want to call the deploy action as a step.
+# ==============================================================================
+name: CI and Deploy
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # (Optional) Add test or build steps here:
+      # - name: Run tests
+      #   run: npm test
+
+      # Replace <USERNAME_OR_ORG> with your GitHub username or organization
+      - name: Deploy to VPS
+        uses: <USERNAME_OR_ORG>/deploy@main
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          user: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          doppler_token: ${{ secrets.DOPPLER_TOKEN }}
+          # target_dir: "/docker/my-app"
+          # no_cache: false
+          # service_name: "app"
+

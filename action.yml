@@ -1,0 +1,291 @@
+name: 'VPS Docker Deploy'
+description: 'Deploy project to VPS via SSH & Docker Compose with optional Doppler integration'
+author: 'varunsharma'
+
+inputs:
+  host:
+    description: 'VPS hostname or IP address'
+    required: true
+  user:
+    description: 'VPS SSH username'
+    required: true
+  key:
+    description: 'VPS private SSH key'
+    required: true
+  port:
+    description: 'SSH port'
+    required: false
+    default: '22'
+  target_dir:
+    description: 'Target directory on VPS (defaults to /docker/<repo-name>)'
+    required: false
+    default: ''
+  files:
+    description: 'Files or glob pattern to copy to VPS'
+    required: false
+    default: '*'
+  exclude:
+    description: 'Patterns to exclude during rsync (space or comma separated, nothing by default)'
+    required: false
+    default: ''
+  compose_file:
+    description: 'Path to docker-compose file'
+    required: false
+    default: 'docker-compose.yml'
+  doppler_token:
+    description: 'Optional Doppler service token'
+    required: false
+    default: ''
+  down:
+    description: 'Stop existing containers before starting'
+    required: false
+    default: 'true'
+  pull:
+    description: 'Pull latest Docker images before starting'
+    required: false
+    default: 'true'
+  build:
+    description: 'Build Docker images before starting'
+    required: false
+    default: 'false'
+  no_cache:
+    description: 'Rebuild Docker images without cache (--no-cache)'
+    required: false
+    default: 'false'
+  force_recreate:
+    description: 'Force recreate containers on compose up'
+    required: false
+    default: 'true'
+  cleanup:
+    description: 'Prune unused docker images'
+    required: false
+    default: 'false'
+  cleanup_image:
+    description: 'Specific docker image to remove before redeploying (e.g. image:tag)'
+    required: false
+    default: ''
+  pre_deploy_command:
+    description: 'Optional shell command to run before docker compose up'
+    required: false
+    default: ''
+  post_deploy_command:
+    description: 'Optional shell command to run after docker compose up'
+    required: false
+    default: ''
+  service_name:
+    description: 'Specific service or container name to check health for'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Stage files to VPS temporary directory
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ inputs.host }}
+        username: ${{ inputs.user }}
+        key: ${{ inputs.key }}
+        port: ${{ inputs.port }}
+        source: ${{ inputs.files }}
+        target: /tmp/${{ github.event.repository.name || 'deploy' }}-staging
+        overwrite: true
+
+    - name: Deploy and restart containers on VPS
+      uses: appleboy/ssh-action@v1.0.3
+      env:
+        DOPPLER_TOKEN: ${{ inputs.doppler_token }}
+        REPO_NAME: ${{ github.event.repository.name || 'deploy' }}
+        INPUT_TARGET_DIR: ${{ inputs.target_dir }}
+        COMPOSE_FILE: ${{ inputs.compose_file }}
+        INPUT_EXCLUDE: ${{ inputs.exclude }}
+        DOWN: ${{ inputs.down }}
+        PULL: ${{ inputs.pull }}
+        BUILD: ${{ inputs.build }}
+        NO_CACHE: ${{ inputs.no_cache }}
+        FORCE_RECREATE: ${{ inputs.force_recreate }}
+        CLEANUP: ${{ inputs.cleanup }}
+        CLEANUP_IMAGE: ${{ inputs.cleanup_image }}
+        PRE_DEPLOY_COMMAND: ${{ inputs.pre_deploy_command }}
+        POST_DEPLOY_COMMAND: ${{ inputs.post_deploy_command }}
+        SERVICE_NAME: ${{ inputs.service_name }}
+      with:
+        host: ${{ inputs.host }}
+        username: ${{ inputs.user }}
+        key: ${{ inputs.key }}
+        port: ${{ inputs.port }}
+        envs: DOPPLER_TOKEN,REPO_NAME,INPUT_TARGET_DIR,COMPOSE_FILE,INPUT_EXCLUDE,DOWN,PULL,BUILD,NO_CACHE,FORCE_RECREATE,CLEANUP,CLEANUP_IMAGE,PRE_DEPLOY_COMMAND,POST_DEPLOY_COMMAND,SERVICE_NAME
+        script: |
+          set -euo pipefail
+
+          TARGET_DIR="${INPUT_TARGET_DIR:-/docker/$REPO_NAME}"
+          TEMP_DIR="/tmp/${REPO_NAME}-staging"
+
+          echo "=========================================="
+          echo "[deploy] Starting deployment for $REPO_NAME"
+          echo "[deploy] Target Directory: $TARGET_DIR"
+          echo "=========================================="
+
+          # 1. Doppler Token Setup
+          DOPPLER_RUN=""
+          if [ -n "${DOPPLER_TOKEN:-}" ]; then
+            if ! command -v doppler >/dev/null 2>&1; then
+              echo "[deploy] Installing Doppler CLI..."
+              (curl -sL https://cli.doppler.com/install.sh || wget -qO- https://cli.doppler.com/install.sh) | (sudo sh 2>/dev/null || sh)
+            fi
+            export DOPPLER_TOKEN="$DOPPLER_TOKEN"
+            DOPPLER_RUN="doppler run --"
+            echo "[deploy] Doppler integration enabled."
+          else
+            echo "[deploy] No Doppler token provided. Direct mode enabled."
+          fi
+
+          # 2. Ensure target directory exists (support sudo or direct)
+          mkdir -p "$TARGET_DIR" 2>/dev/null || sudo mkdir -p "$TARGET_DIR"
+
+          # 3. Sync files from staging to target directory
+          if [ -d "$TEMP_DIR" ]; then
+            RSYNC_EXCLUDE_FLAGS=""
+            if [ -n "${INPUT_EXCLUDE:-}" ]; then
+              IFS=', ' read -r -a EXCLUDE_ITEMS <<< "$INPUT_EXCLUDE"
+              for item in "${EXCLUDE_ITEMS[@]}"; do
+                trimmed="$(echo "$item" | xargs)"
+                if [ -n "$trimmed" ]; then
+                  RSYNC_EXCLUDE_FLAGS="$RSYNC_EXCLUDE_FLAGS --exclude=$trimmed"
+                fi
+              done
+            fi
+
+            echo "[deploy] Syncing staged files to $TARGET_DIR..."
+            (rsync -a --delete $RSYNC_EXCLUDE_FLAGS "$TEMP_DIR"/ "$TARGET_DIR"/ 2>/dev/null) || \
+            (sudo rsync -a --delete $RSYNC_EXCLUDE_FLAGS "$TEMP_DIR"/ "$TARGET_DIR"/)
+
+            (rm -rf "$TEMP_DIR" 2>/dev/null) || (sudo rm -rf "$TEMP_DIR")
+          fi
+
+          cd "$TARGET_DIR"
+
+          # 4. Resolve Compose File
+          RESOLVED_COMPOSE="$COMPOSE_FILE"
+          if [ ! -f "$RESOLVED_COMPOSE" ]; then
+            for alt in docker-compose.yml compose.yml docker-compose.yaml compose.yaml; do
+              if [ -f "$alt" ]; then
+                echo "[deploy] Note: '$COMPOSE_FILE' not found; using detected '$alt'."
+                RESOLVED_COMPOSE="$alt"
+                break
+              fi
+            done
+          fi
+
+          if [ ! -f "$RESOLVED_COMPOSE" ]; then
+            echo "[deploy] ERROR: Compose file not found in $TARGET_DIR (checked '$COMPOSE_FILE', compose.yml, compose.yaml)" >&2
+            exit 1
+          fi
+
+          COMPOSE_CMD="$DOPPLER_RUN docker compose -f $RESOLVED_COMPOSE"
+
+          # 5. Stop existing containers if requested
+          if [ "$DOWN" = "true" ]; then
+            echo "[deploy] Stopping existing containers..."
+            $COMPOSE_CMD down || true
+          fi
+
+          # 6. Specific image cleanup or general prune
+          if [ -n "${CLEANUP_IMAGE:-}" ]; then
+            echo "[deploy] Removing specific image: $CLEANUP_IMAGE..."
+            $DOPPLER_RUN docker image rm "$CLEANUP_IMAGE" 2>/dev/null || true
+          fi
+
+          if [ "$CLEANUP" = "true" ]; then
+            echo "[deploy] Pruning unused docker images..."
+            docker image prune -f 2>/dev/null || true
+          fi
+
+          # 7. Pull latest images
+          if [ "$PULL" = "true" ]; then
+            echo "[deploy] Pulling latest compose images..."
+            $COMPOSE_CMD pull || true
+          fi
+
+          # 8. Build images (supporting --no-cache)
+          if [ "$NO_CACHE" = "true" ]; then
+            echo "[deploy] Rebuilding images with --no-cache..."
+            $COMPOSE_CMD build --no-cache
+          elif [ "$BUILD" = "true" ]; then
+            echo "[deploy] Building images..."
+            $COMPOSE_CMD build
+          fi
+
+          # 9. Pre-deploy command
+          if [ -n "${PRE_DEPLOY_COMMAND:-}" ]; then
+            echo "[deploy] Executing pre-deploy command..."
+            eval "$DOPPLER_RUN $PRE_DEPLOY_COMMAND"
+          fi
+
+          # 10. Start containers
+          UP_ARGS="-d"
+          if [ "$FORCE_RECREATE" = "true" ]; then
+            UP_ARGS="$UP_ARGS --force-recreate"
+          fi
+          UP_ARGS="$UP_ARGS --remove-orphans"
+
+          echo "[deploy] Starting containers with: docker compose up $UP_ARGS"
+          $COMPOSE_CMD up $UP_ARGS
+
+          # 11. Post-deploy command
+          if [ -n "${POST_DEPLOY_COMMAND:-}" ]; then
+            echo "[deploy] Executing post-deploy command..."
+            eval "$DOPPLER_RUN $POST_DEPLOY_COMMAND"
+          fi
+
+          # 12. Verification & health check loop
+          echo "[deploy] Current container status:"
+          $COMPOSE_CMD ps
+
+          if [ -n "${SERVICE_NAME:-}" ]; then
+            echo "[deploy] Checking service '$SERVICE_NAME' health..."
+            state=""
+            for i in $(seq 1 30); do
+              cid="$($COMPOSE_CMD ps -q "$SERVICE_NAME" 2>/dev/null || true)"
+              if [ -n "$cid" ]; then
+                state="$(docker inspect -f '{{.State.Running}}' "$cid" 2>/dev/null || true)"
+                health="$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}' "$cid" 2>/dev/null || true)"
+                if [ "$state" = "true" ]; then
+                  echo "[deploy] Service '$SERVICE_NAME' is Running (health: ${health:-n/a})"
+                  break
+                fi
+              fi
+              echo "[deploy] Waiting for '$SERVICE_NAME' to start... ($i/30)"
+              sleep 4
+            done
+
+            if [ "$state" != "true" ]; then
+              echo "[deploy] ERROR: Service '$SERVICE_NAME' failed to start or is not running." >&2
+              $COMPOSE_CMD logs --tail=100 "$SERVICE_NAME" || true
+              exit 1
+            fi
+          else
+            # Verify at least one container is running for this compose project
+            state=""
+            for i in $(seq 1 15); do
+              running_count="$($COMPOSE_CMD ps --status running -q 2>/dev/null | wc -l | tr -d ' ' || echo 0)"
+              if [ "$running_count" -gt 0 ]; then
+                echo "[deploy] Verified: $running_count container(s) running."
+                state="true"
+                break
+              fi
+              echo "[deploy] Waiting for containers to come up... ($i/15)"
+              sleep 3
+            done
+
+            if [ "$state" != "true" ]; then
+              echo "[deploy] ERROR: No running containers detected for project." >&2
+              $COMPOSE_CMD logs --tail=50 || true
+              exit 1
+            fi
+          fi
+
+          echo "=========================================="
+          echo "[deploy] Deployment finished successfully!"
+          echo "=========================================="
+

@@ -1,0 +1,49 @@
+# ==============================================================================
+# Advanced VPS Deploy Workflow with Options
+# Demonstrates manual inputs (e.g. no-cache rebuild, cleanup), custom target
+# directory, specific service health check, and pre/post deployment scripts.
+# ==============================================================================
+name: Deploy to VPS (Configured)
+
+on:
+  push:
+    branches: [main, master]
+    paths-ignore: ['.gitignore', 'README.md']
+  workflow_dispatch:
+    inputs:
+      no_cache:
+        description: 'Rebuild Docker images without cache (--no-cache)'
+        required: false
+        type: boolean
+        default: false
+      cleanup:
+        description: 'Prune unused docker images'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  deploy:
+    # Replace <USERNAME_OR_ORG> with your GitHub username or organization name
+    uses: <USERNAME_OR_ORG>/deploy/.github/workflows/deploy.yml@main
+    secrets: inherit
+    with:
+      # Optional: Override target directory on VPS (defaults to /docker/<repo-name>)
+      target_dir: "/docker/my-custom-app"
+
+      # Optional: Pass rebuild / no-cache preferences from manual trigger
+      no_cache: ${{ inputs.no_cache || false }}
+      cleanup: ${{ inputs.cleanup || false }}
+
+      # Optional: Rsync exclude patterns (nothing excluded by default)
+      exclude: ".git, .github, *.md"
+
+      # Optional: Service to verify container health for
+      service_name: "web"
+
+      # Optional: Pre-deploy bootstrap script (e.g., config creation, db migration)
+      # pre_deploy_command: "bash scripts/bootstrap.sh"
+
+      # Optional: Post-deploy notification or verification command
+      # post_deploy_command: "curl -s -X POST https://api.mychat.com/deploy-alert"
+

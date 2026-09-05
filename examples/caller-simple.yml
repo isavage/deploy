@@ -1,0 +1,17 @@
+# ==============================================================================
+# Simple Zero-Config Deploy Workflow
+# Place this file in your project repository at: .github/workflows/deploy.yml
+# ==============================================================================
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    # Replace <USERNAME_OR_ORG> with your GitHub username or organization name where the deploy repo lives
+    uses: <USERNAME_OR_ORG>/deploy/.github/workflows/deploy.yml@main
+    secrets: inherit
+
