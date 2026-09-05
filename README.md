@@ -29,15 +29,16 @@ That's it! When you push code or click **Run workflow**, your project automatica
 
 Set these secrets in your repository (**Settings > Secrets and variables > Actions**) or at your **GitHub Organization / Personal Account** level so they are shared across all repositories:
 
-| Secret | Description | Required |
-|---|---|---|
-| `VPS_HOST` | Hostname or IP address of your VPS | **Yes** |
-| `VPS_USER` | SSH username on your VPS (e.g. `root` or a sudo-enabled user) | **Yes** |
-| `VPS_SSH_KEY` | Private SSH key (matching your public key on the VPS in `~/.ssh/authorized_keys`) | **Yes** |
-| `DOPPLER_TOKEN` | Service token from Doppler (`dp.st...`) | **Optional** |
+| Secret | Scoped Level | Description | Required |
+|---|---|---|---|
+| `VPS_HOST` | **Org or Repo** | Hostname or IP address of your VPS | **Yes** |
+| `VPS_USER` | **Org or Repo** | SSH username on your VPS (e.g. `root` or a sudo-enabled user) | **Yes** |
+| `VPS_SSH_KEY` | **Org or Repo** | Private SSH key (matching `~/.ssh/authorized_keys` on VPS) | **Yes** |
+| `DOPPLER_TOKEN` | **Repo Only** | Project-specific Service Token from Doppler (`dp.st...`) | **Optional** |
 
 > [!TIP]
-> If you add these secrets to your GitHub Organization or Account as Organization/Account Secrets, you **never** have to enter them again for future projects!
+> - **Shared VPS Secrets (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`)**: Add these once at your **GitHub Organization / Account** level so all repositories inherit them automatically.
+> - **`DOPPLER_TOKEN`**: Must be added at each **individual Repository level** (or Environment level), because Doppler Service Tokens are scoped to a specific project and config.
 
 ---
 
