@@ -26,6 +26,8 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           user: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
+          # Omit this line when Doppler is not used.
+          doppler_token: ${{ secrets.DOPPLER_TOKEN }}
 ```
 
 The `environment: production` line is required only when the secrets are
@@ -59,13 +61,41 @@ Set these secrets either in a GitHub Environment (**Settings > Environments >
 The action gives you 3 convenient ways to manage environment variables:
 
 ### Mode 1: Doppler (Recommended if using Doppler)
-If `DOPPLER_TOKEN` is passed:
+Pass the Doppler service token to the action:
+
+```yaml
+- uses: isavage/deploy@v3
+  with:
+    host: ${{ secrets.VPS_HOST }}
+    user: ${{ secrets.VPS_USER }}
+    key: ${{ secrets.VPS_SSH_KEY }}
+    doppler_token: ${{ secrets.DOPPLER_TOKEN }}
+```
+
+You do **not** need to list or pass individual Doppler variables. If
+`DOPPLER_TOKEN` is provided:
 - Doppler CLI is installed on the VPS (if missing).
 - Secrets are injected in memory directly to Docker Compose:
   ```bash
   doppler run -- docker compose up -d
   ```
 - No `.env` file needs to be written to disk.
+- Docker Compose can use the injected variables by their normal names, for
+  example `${DATABASE_URL}` or `${POSTGRES_PASSWORD}`.
+
+The token does not automatically add every Doppler secret to every container.
+Your Compose file must reference the variables explicitly:
+
+```yaml
+services:
+  app:
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+```
+
+Alternatively, pass the variables through a Compose `env_file` that you create
+yourself. The action does not write a Doppler `.env` file in Doppler mode.
 
 ### Mode 2: Secrets from GitHub (`ENV_FILE` / `env_content`)
 If not using Doppler, you can store your `.env` contents in GitHub Secrets as `ENV_FILE`:
