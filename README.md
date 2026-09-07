@@ -4,9 +4,9 @@ Zero-boilerplate automated continuous deployment to your VPS using Docker Compos
 
 ---
 
-## ⚡ Quick Start: Deploy Any Repo in 8 Lines
+## ⚡ Quick Start
 
-In any of your project repositories, simply create `.github/workflows/deploy.yml`:
+Use this Marketplace action as a step in your workflow:
 
 ```yaml
 name: Deploy
@@ -17,29 +17,40 @@ on:
 
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@v2
-    secrets: inherit
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: isavage/deploy@v3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          user: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
 ```
 
-That's it! When you push code or click **Run workflow**, your project automatically syncs to your VPS at `/docker/<repo-name>` and restarts your containers.
+The `environment: production` line is required only when the secrets are
+stored in that GitHub Environment. For repository or organization secrets,
+omit it. Replace `production` with the exact name of your Environment.
 
 ---
 
 ## 🔐 Required GitHub Secrets
 
-Set these secrets in your repository (**Settings > Secrets and variables > Actions**) or at your **GitHub Organization / Personal Account** level so they are shared across all repositories:
+Set these secrets either in a GitHub Environment (**Settings > Environments >
+<environment> > Environment secrets**) or at repository/organization scope:
 
 | Secret | Scoped Level | Description | Required |
 |---|---|---|---|
-| `VPS_HOST` | **Org or Repo** | Hostname or IP address of your VPS | **Yes** |
-| `VPS_USER` | **Org or Repo** | SSH username on your VPS (e.g. `root` or a sudo-enabled user) | **Yes** |
-| `VPS_SSH_KEY` | **Org or Repo** | Private SSH key (matching `~/.ssh/authorized_keys` on VPS) | **Yes** |
-| `DOPPLER_TOKEN` | **Repo Only** | Project-specific Service Token from Doppler (`dp.st...`) | **Optional** |
-| `ENV_FILE` | **Repo Only** | Complete `.env` content from GitHub secrets | **Optional** |
+| `VPS_HOST` | **Environment, Org, or Repo** | Hostname or IP address of your VPS | **Yes** |
+| `VPS_USER` | **Environment, Org, or Repo** | SSH username on your VPS (e.g. `root` or a sudo-enabled user) | **Yes** |
+| `VPS_SSH_KEY` | **Environment, Org, or Repo** | Private SSH key (matching `~/.ssh/authorized_keys` on VPS) | **Yes** |
+| `DOPPLER_TOKEN` | **Environment, Org, or Repo** | Project-specific Service Token from Doppler (`dp.st...`) | **Optional** |
+| `ENV_FILE` | **Environment, Org, or Repo** | Complete `.env` content from GitHub secrets | **Optional** |
 
 > [!TIP]
-> - **Shared VPS Secrets (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`)**: Add these once at your **GitHub Organization / Account** level so all repositories inherit them automatically.
-> - **`DOPPLER_TOKEN` / `ENV_FILE`**: Add at each **individual Repository level** (or Environment level) so secrets remain isolated per project.
+> - For Environment secrets, set `environment: <name>` on the caller job.
+> - Pass `VPS_HOST`, `VPS_USER`, and `VPS_SSH_KEY` through the action's `host`, `user`, and `key` inputs.
+> - Never print secret values in workflow logs.
 
 ---
 
@@ -58,7 +69,8 @@ If `DOPPLER_TOKEN` is passed:
 
 ### Mode 2: Secrets from GitHub (`ENV_FILE` / `env_content`)
 If not using Doppler, you can store your `.env` contents in GitHub Secrets as `ENV_FILE`:
-- With `secrets: inherit`, any secret named `ENV_FILE` in your repo is automatically passed.
+- Pass it to the action with `env_content: ${{ secrets.ENV_FILE }}`.
+- If `ENV_FILE` is an Environment secret, set `environment: <name>` on the caller job first.
 - The action safely writes it to `.env` on your VPS and sets file permissions to `600` before starting containers.
 - You can also specify a custom filename via `with: env_file_name: ".env.production"`.
 
@@ -74,7 +86,7 @@ If you prefer creating and managing your `.env` directly on your VPS:
 When you make changes to a Dockerfile or source code that needs a clean build without cache, you can trigger a deploy with the `no_cache` option enabled:
 
 ### Option A: Manual Trigger via Workflow Dispatch
-Add inputs to your caller workflow:
+Pass the `no_cache` and `cleanup` inputs to the Marketplace action:
 
 ```yaml
 name: Deploy
@@ -96,21 +108,33 @@ on:
 
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@v2
-    secrets: inherit
-    with:
-      no_cache: ${{ inputs.no_cache || false }}
-      cleanup: ${{ inputs.cleanup || false }}
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: isavage/deploy@v3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          user: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          no_cache: ${{ inputs.no_cache || false }}
+          cleanup: ${{ inputs.cleanup || false }}
 ```
 
 ### Option B: Force Rebuild Always in Workflow
 ```yaml
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@v2
-    secrets: inherit
-    with:
-      no_cache: true
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: isavage/deploy@v3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          user: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          no_cache: true
 ```
 
 When `no_cache: true` is set, the action executes:
@@ -142,7 +166,6 @@ All inputs are optional and have sensible defaults matching standard VPS setups:
 | `service_name` | string | `""` | Specific service name to monitor health for |
 | `pre_deploy_command` | string | `""` | Shell command to execute before `compose up` |
 | `post_deploy_command`| string | `""` | Shell command to execute after `compose up` |
-| `environment` | string | `""` | GitHub Environment to bind for secret protection |
 | `env_content` | string | `""` | Optional .env contents passed from secrets |
 | `env_file_name` | string | `.env` | File name for written environment variables |
 
@@ -150,17 +173,23 @@ All inputs are optional and have sensible defaults matching standard VPS setups:
 
 ## 🧩 Advanced Examples
 
-### 1. Custom Bootstrap Script & Excludes
+### Custom Bootstrap Script & Excludes
 ```yaml
 jobs:
   deploy:
-    uses: isavage/deploy/.github/workflows/deploy.yml@v2
-    secrets: inherit
-    with:
-      target_dir: "/docker/hermes"
-      exclude: ".git, .github, docs"
-      service_name: "hermes"
-      pre_deploy_command: "bash scripts/bootstrap-hermes-config.sh hermes-data"
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: isavage/deploy@v3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          user: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          target_dir: "/docker/hermes"
+          exclude: ".git, .github, docs"
+          service_name: "hermes"
+          pre_deploy_command: "bash scripts/bootstrap-hermes-config.sh hermes-data"
 ```
 
 ### 2. Composite Action inside Custom Multi-Step Workflow
@@ -175,6 +204,8 @@ on:
 jobs:
   ci-cd:
     runs-on: ubuntu-latest
+    # Required when the VPS_* secrets are Environment secrets.
+    environment: production
     steps:
       - uses: actions/checkout@v4
 
@@ -182,7 +213,7 @@ jobs:
         run: npm test
 
       - name: Deploy to VPS
-        uses: isavage/deploy@v2
+        uses: isavage/deploy@v3
         with:
           host: ${{ secrets.VPS_HOST }}
           user: ${{ secrets.VPS_USER }}
@@ -197,4 +228,3 @@ jobs:
 - **Retry Polling**: `compose up -d` can return while a container is still initializing. The action polls container runtime state via `docker inspect` for up to 30 intervals (with sleep) so deployments only report success when the container is truly running and healthy.
 - **Instant Error Logs**: If a container fails or crashes on startup, the action automatically streams `docker compose logs --tail=100` into the GitHub Actions run output and halts the pipeline with an error code.
 - **Sudo & Permission Resilience**: Automatically supports both `root` users and non-root users with `sudo` privileges without permission errors during directory creation or file syncing.
-

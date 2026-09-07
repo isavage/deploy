@@ -96,13 +96,13 @@ on:
     secrets:
       VPS_HOST:
         description: 'VPS Host IP or hostname'
-        required: true
+        required: false
       VPS_USER:
         description: 'VPS SSH username'
-        required: true
+        required: false
       VPS_SSH_KEY:
         description: 'VPS SSH private key'
-        required: true
+        required: false
       DOPPLER_TOKEN:
         description: 'Optional Doppler service token'
         required: false
